@@ -1,0 +1,143 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Enforce HTTPS
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Prevent directory listing
+    Options -Indexes
+
+    # Block access to sensitive files
+    <FilesMatch "\.(env|json|lock|md|sql|yml|yaml|log|ini|git|bak|dist|sh|inc|txt)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+
+    # Block access to includes directory
+    RewriteRule ^includes/.*$ - [F,L]
+
+    # Block common attack vectors
+    RewriteCond %{QUERY_STRING} base66_decode [NC,OR]
+    RewriteCond %{QUERY_STRING} (%3C|%3E|%24|%28|%29|%60|%21|%40|%23|%25|%5E|%26|%2A|%2B|%7C) [NC,OR]
+    RewriteCond %{QUERY_STRING} (eval\() [NC,OR]
+    RewriteCond %{QUERY_STRING} (union.*select) [NC,OR]
+    RewriteCond %{QUERY_STRING} (concat.*char) [NC,OR]
+    RewriteCond %{QUERY_STRING} (outfile.*load_file) [NC,OR]
+    RewriteCond %{QUERY_STRING} (etc/passwd) [NC,OR]
+    RewriteCond %{QUERY_STRING} (proc/self/environ) [NC,OR]
+    RewriteCond %{QUERY_STRING} (mosConfig) [NC,OR]
+    RewriteCond %{QUERY_STRING} (boot_ini) [NC,OR]
+    RewriteCond %{QUERY_STRING} (GLOBALS|PHP_SELF|REQUEST_URI) [NC,OR]
+    RewriteCond %{QUERY_STRING} (document_root|HTTP_USER_AGENT|HTTP_COOKIE) [NC,OR]
+    RewriteCond %{QUERY_STRING} (phpmyadmin|phpMyAdmin) [NC,OR]
+    RewriteCond %{QUERY_STRING} (passwd|etc/shadow) [NC,OR]
+    RewriteCond %{QUERY_STRING} (wget|curl) [NC,OR]
+    RewriteCond %{QUERY_STRING} (javascript|vbscript|expression) [NC,OR]
+    RewriteCond %{QUERY_STRING} (onclick|onmouseover|onerror) [NC,OR]
+    RewriteCond %{QUERY_STRING} (alert|prompt|confirm) [NC,OR]
+    RewriteCond %{QUERY_STRING} (sleep\() [NC,OR]
+    RewriteCond %{QUERY_STRING} (benchmark\() [NC,OR]
+    RewriteCond %{QUERY_STRING} (information_schema) [NC]
+    RewriteRule ^(.*)$ - [F,L]
+
+    # Prevent hotlinking of images (Disabled to fix image display issues)
+    # RewriteCond %{HTTP_REFERER} !^$
+    # RewriteCond %{HTTP_REFERER} !^https?://(www\.)?yourdomain\.com [NC]
+    # RewriteRule \.(jpg|jpeg|png|gif|svg)$ - [F,NC,L]
+
+    # Custom error pages (optional)
+    # ErrorDocument 403 /403.php
+    # ErrorDocument 404 /404.php
+    # ErrorDocument 500 /500.php
+
+    # Default index file
+    DirectoryIndex index.php index.html
+
+    # PHP settings (optional, adjust as needed)
+    <IfModule mod_php7.c>
+        php_flag display_errors Off
+        php_value error_reporting 0
+        php_value upload_max_filesize 10M
+        php_value post_max_size 10M
+        php_value max_execution_time 300
+        php_value max_input_time 300
+        php_value memory_limit 256M
+    </IfModule>
+
+</IfModule>
+
+# Disable server signature
+ServerSignature Off
+
+# Disable ETag to prevent information leakage
+Header unset ETag
+FileETag None
+
+# Set X-Content-Type-Options to nosniff
+Header set X-Content-Type-Options "nosniff"
+
+# Set X-XSS-Protection to 1; mode=block
+Header set X-XSS-Protection "1; mode=block"
+
+# Set X-Frame-Options to SAMEORIGIN to prevent clickjacking
+Header always set X-Frame-Options "SAMEORIGIN"
+
+# Enforce HTTP Strict Transport Security (HSTS) - uncomment after testing HTTPS
+# Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+# Content Security Policy (CSP) - adjust as needed, this is a strict example
+# Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src 'self'; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self';"
+
+# Remove PHP version header
+Header unset X-Powered-By
+
+# Restrict HTTP methods
+<LimitExcept GET POST>
+    Order allow,deny
+    Deny from all
+</LimitExcept>
+
+# Protect against SQL Injection and XSS in URL parameters (basic)
+# This is a basic protection and should be complemented by server-side validation
+RewriteCond %{QUERY_STRING} (union|select|insert|delete|update|drop|alter|create|rename|truncate|exec|declare|cast|convert|xp_cmdshell|information_schema|benchmark|sleep) [NC,OR]
+RewriteCond %{QUERY_STRING} (\%27|\%22|\%3B|\%2D\%2D|\%23|\%2F\*|\%2A\/|\%3D) [NC,OR]
+RewriteCond %{QUERY_STRING} (<|>|'|"|%0A|%0D|%27|%3C|%3E|%00) [NC]
+RewriteRule ^(.*)$ - [F,L]
+
+# Protect against RFI/LFI
+RewriteCond %{QUERY_STRING} (http|ftp)(s)?:// [NC,OR]
+RewriteCond %{QUERY_STRING} (\.\./|\.\.\\) [NC,OR]
+RewriteCond %{QUERY_STRING} (file:///) [NC]
+RewriteRule ^(.*)$ - [F,L]
+
+# Protect against XSS in POST requests (requires mod_security for full protection, this is a basic attempt)
+# This cannot fully protect against POST-based XSS, server-side input validation is crucial.
+# The following rules are more for query string and URL paths.
+
+# Prevent script execution in uploads directory (if applicable)
+# <Directory /home/ubuntu/project_analysis/images/profile_pics>
+#    <FilesMatch "\.(php|phtml|php3|php4|php5|php6|php7|phps|cgi|pl|py|jsp|asp|aspx|html|htm|js|json)$">
+#        Order Allow,Deny
+#        Deny from All
+#    </FilesMatch>
+#    AddType text/plain .php .phtml .php3 .php4 .php5 .php6 .php7 .phps .cgi .pl .py .jsp .asp .aspx .html .htm .js .json
+# </Directory>
+
+# <Directory /home/ubuntu/project_analysis/images/logo>
+#    <FilesMatch "\.(php|phtml|php3|php4|php5|php6|php7|phps|cgi|pl|py|jsp|asp|aspx|html|htm|js|json)$">
+#        Order Allow,Deny
+#        Deny from All
+#    </FilesMatch>
+#    AddType text/plain .php .phtml .php3 .php4 .php5 .php6 .php7 .phps .cgi .pl .py .jsp .asp .aspx .html .htm .js .json
+# </Directory>
+
+# <Directory /home/ubuntu/project_analysis/images/students>
+#    <FilesMatch "\.(php|phtml|php3|php4|php5|php6|php7|phps|cgi|pl|py|jsp|asp|aspx|html|htm|js|json)$">
+#        Order Allow,Deny
+#        Deny from All
+#    </FilesMatch>
+#    AddType text/plain .php .phtml .php3 .php4 .php5 .php6 .php7 .phps .cgi .pl .py .jsp .asp .aspx .html .htm .js .json
+# </Directory>
+
+# End of .htaccess
